@@ -5,7 +5,7 @@ app.use(cors())
 app.use(express.json())
 require('dotenv').config()
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT;
 const uri = process.env.MONGODB_URI;
 
@@ -21,6 +21,74 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         const db = client.db('BookFlow');
+        const booksCollection = db.collection("books");
+        const usersCollection = db.collection("user");
+
+
+
+        app.post("/librarian/add-book", async (req, res) => {
+            const data = req.body;
+            const result = await booksCollection.insertOne({ ...data});
+            res.send(result)
+        })
+
+
+        app.get("/librarian/add-book", async (req, res) => {
+            const result = await booksCollection.find().toArray();
+            res.send(result)
+        })
+
+        app.get("/librarian/add-book", async (req, res) => {
+            const { userId } = req.query;
+            const result = await booksCollection.find({userId: userId}).toArray();
+            res.send(result)
+        })
+
+        app.delete("/librarian/delete-book", async (req, res) => {
+            const { bookId, userId } = req.query;
+
+            const result = await booksCollection.deleteOne({
+                _id: new ObjectId(bookId),
+                userId: userId,
+            });
+
+            res.send(result);
+        });
+
+        app.patch("/librarian/update-book", async (req, res) => {
+            const { bookId, userId } = req.query;
+
+            const { title, author, price, category, description } = req.body;
+
+            const result = await booksCollection.updateOne(
+                {
+                    _id: new ObjectId(bookId),
+                    userId: userId,
+                },
+                {
+                    $set: {
+                        title,
+                        author,
+                        price,
+                        category,
+                        description,
+                    },
+                }
+            );
+
+            res.send(result);
+        });
+
+        
+
+        app.get("/librarian/add-book/:id", async (req, res) => {
+            const { id } = req.params;
+
+            const result = await booksCollection.findOne({_id: new ObjectId(id),
+            });
+
+            res.send(result);
+        });
 
 
         // Connect the client to the server	(optional starting in v4.7)
