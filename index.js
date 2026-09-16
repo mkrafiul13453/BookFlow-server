@@ -23,6 +23,7 @@ async function run() {
         const db = client.db('BookFlow');
         const booksCollection = db.collection("books");
         const usersCollection = db.collection("user");
+        const cartsCollection = db.collection("carts");
 
 
 
@@ -88,6 +89,167 @@ async function run() {
             });
 
             res.send(result);
+        });
+
+        // .......................................................Add to cart post api.................................................................
+        app.post("/cart", async (req, res) => {
+            const { userId, bookId } = req.body;
+
+            if (!userId || !bookId) {
+                return res.status(400).send({
+                    success: false,
+                    message: "userId and bookId are required",
+                });
+            }
+
+            const book = await booksCollection.findOne({
+                _id: new ObjectId(bookId),
+            });
+
+            if (!book) {
+                return res.status(404).send({
+                    success: false,
+                    message: "Book not found",
+                });
+            }
+
+            const existingCartItem = await cartsCollection.findOne({
+                userId: userId,
+                bookId: bookId,
+            });
+
+            if (existingCartItem) {
+                const result = await cartsCollection.updateOne(
+                    {
+                        _id: existingCartItem._id,
+                    },
+                    {
+                        $inc: {
+                            quantity: 1,
+                        },
+                    }
+                );
+
+                return res.send({
+                    success: true,
+                    message: "Book quantity increased",
+                    result,
+                });
+            }
+
+            const cartItem = {
+                userId: userId,
+                bookId: bookId,
+                title: book.title,
+                author: book.author,
+                price: Number(book.price),
+                image: book.image,
+                category: book.category,
+                quantity: 1,
+            };
+
+            const result = await cartsCollection.insertOne(cartItem);
+
+            res.send({
+                success: true,
+                message: "Book added to cart",
+                result,
+            });
+        });
+
+         // .......................................................Add to cart get api.................................................................
+        app.get("/cart", async (req, res) => {
+            const { userId } = req.query;
+
+            if (!userId) {
+                return res.status(400).send({
+                    success: false,
+                    message: "userId is required",
+                });
+            }
+
+            const result = await cartsCollection
+                .find({ userId: userId })
+                .toArray();
+
+            res.send(result);
+        });
+
+        // .......................................................Cart update api.......................................................................
+        app.patch("/cart/:id", async (req, res) => {
+            const { id } = req.params;
+            const { userId, quantity } = req.body;
+
+            if (!userId || !quantity || quantity < 1) {
+                return res.status(400).send({
+                    success: false,
+                    message: "Invalid userId or quantity",
+                });
+            }
+
+            const result = await cartsCollection.updateOne(
+                {
+                    _id: new ObjectId(id),
+                    userId: userId,
+                },
+                {
+                    $set: {
+                        quantity: Number(quantity),
+                    },
+                }
+            );
+
+            res.send({
+                success: true,
+                message: "Cart quantity updated",
+                result,
+            });
+        });
+
+        // ....................................Cart single item delete api.......................................................................
+        app.delete("/cart/:id", async (req, res) => {
+            const { id } = req.params;
+            const { userId } = req.query;
+
+            if (!userId) {
+                return res.status(400).send({
+                    success: false,
+                    message: "userId is required",
+                });
+            }
+
+            const result = await cartsCollection.deleteOne({
+                _id: new ObjectId(id),
+                userId: userId,
+            });
+
+            res.send({
+                success: true,
+                message: "Book removed from cart",
+                result,
+            });
+        });
+
+        // ..........................................................CLear entire cart api.......................................................................
+        app.delete("/cart", async (req, res) => {
+            const { userId } = req.query;
+
+            if (!userId) {
+                return res.status(400).send({
+                    success: false,
+                    message: "userId is required",
+                });
+            }
+
+            const result = await cartsCollection.deleteMany({
+                userId: userId,
+            });
+
+            res.send({
+                success: true,
+                message: "Cart cleared successfully",
+                result,
+            });
         });
 
 
