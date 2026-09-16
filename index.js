@@ -253,6 +253,26 @@ async function run() {
         });
 
 
+        app.get("/user", async (req, res) => {
+            const result = await usersCollection.find().toArray();
+            res.send(result)
+        })
+
+
+        app.delete("/user/:id", async (req, res) => {
+            const id = req.params.id;
+
+            const result = await usersCollection.deleteOne({
+                _id: new ObjectId(id),
+            });
+
+            res.send(result);
+        });
+
+
+
+
+
         // Connect the client to the server	(optional starting in v4.7)
         // await client.connect();
         // Send a ping to confirm a successful connection
