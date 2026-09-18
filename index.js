@@ -26,25 +26,27 @@ async function run() {
         const cartsCollection = db.collection("carts");
 
 
-
+// ..........................................................Add book by librarian api.......................................................................
         app.post("/librarian/add-book", async (req, res) => {
             const data = req.body;
             const result = await booksCollection.insertOne({ ...data});
             res.send(result)
         })
 
-
+// ..........................................................Get all book api.......................................................................
         app.get("/librarian/add-book", async (req, res) => {
             const result = await booksCollection.find().toArray();
             res.send(result)
         })
 
-        app.get("/librarian/add-book", async (req, res) => {
+        // ..........................................................Get all book by librarian id api.......................................................................
+        app.get("/librarian/add-book/data", async (req, res) => {
             const { userId } = req.query;
             const result = await booksCollection.find({userId: userId}).toArray();
             res.send(result)
         })
 
+        // ..........................................................Delete single book by librarian id api.......................................................................
         app.delete("/librarian/delete-book", async (req, res) => {
             const { bookId, userId } = req.query;
 
@@ -56,6 +58,8 @@ async function run() {
             res.send(result);
         });
 
+
+        // ..........................................................Update single book by librarian id api.......................................................................
         app.patch("/librarian/update-book", async (req, res) => {
             const { bookId, userId } = req.query;
 
@@ -81,7 +85,7 @@ async function run() {
         });
 
         
-
+// ..........................................................Get single book book id api.......................................................................
         app.get("/librarian/add-book/:id", async (req, res) => {
             const { id } = req.params;
 
@@ -253,16 +257,28 @@ async function run() {
         });
 
 
+        // ..........................................................Get all user data api.......................................................................
         app.get("/user", async (req, res) => {
             const result = await usersCollection.find().toArray();
             res.send(result)
         })
 
-
+        // ..........................................................Delete single user data api.......................................................................
         app.delete("/user/:id", async (req, res) => {
             const id = req.params.id;
 
             const result = await usersCollection.deleteOne({
+                _id: new ObjectId(id),
+            });
+
+            res.send(result);
+        });
+
+        // ..........................................................Delete single book data by Admin api.......................................................................
+        app.delete("/books/:id", async (req, res) => {
+            const id = req.params.id;
+
+            const result = await booksCollection.deleteOne({
                 _id: new ObjectId(id),
             });
 
