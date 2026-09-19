@@ -24,6 +24,7 @@ async function run() {
         const booksCollection = db.collection("books");
         const usersCollection = db.collection("user");
         const cartsCollection = db.collection("carts");
+        const ordersCollection = db.collection("orders");
 
 
 // ..........................................................Add book by librarian api.......................................................................
@@ -256,6 +257,110 @@ async function run() {
             });
         });
 
+        // .......................................................Create Order API.................................................................
+
+        app.post("/orders", async (req, res) => {
+            try {
+                const { userId, user } = req.body;
+
+                if (!userId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "userId is required",
+                    });
+                }
+
+                // Get user's current cart directly from MongoDB
+                const cartItems = await cartsCollection
+                    .find({ userId: userId })
+                    .toArray();
+
+                if (cartItems.length === 0) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Cart is empty",
+                    });
+                }
+
+                // Prepare ordered products
+                const products = cartItems.map((item) => {
+                    const price = Number(item.price);
+                    const quantity = Number(item.quantity);
+
+                    return {
+                        productId: item.bookId,
+                        title: item.title,
+                        author: item.author,
+                        image: item.image,
+                        category: item.category,
+
+                        price: price,
+                        quantity: quantity,
+
+                        itemTotal: Number(
+                            (price * quantity).toFixed(2)
+                        ),
+                    };
+                });
+
+                // Calculate total price from database cart
+                const totalPrice = products.reduce(
+                    (total, item) => total + item.itemTotal,
+                    0
+                );
+
+                const order = {
+                    userId: userId,
+
+                    user: {
+                        name: user?.name || "",
+                        email: user?.email || "",
+                        image: user?.image || "",
+                    },
+
+                    products: products,
+
+                    totalPrice: Number(totalPrice.toFixed(2)),
+
+                    currency: "usd",
+
+                    paymentStatus: "pending",
+
+                    deliveryStatus: "pending",
+
+                    stripeSessionId: null,
+
+                    stripePaymentIntentId: null,
+
+                    createdAt: new Date(),
+
+                    updatedAt: new Date(),
+                };
+
+                const result = await ordersCollection.insertOne(order);
+
+                res.send({
+                    success: true,
+                    message: "Order created successfully",
+
+                    orderId: result.insertedId.toString(),
+
+                    order: {
+                        ...order,
+                        _id: result.insertedId,
+                    },
+                });
+            } catch (error) {
+                console.error("Create order error:", error);
+
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to create order",
+                    error: error.message,
+                });
+            }
+        });
+
 
         // ..........................................................Get all user data api.......................................................................
         app.get("/user", async (req, res) => {
@@ -272,6 +377,106 @@ async function run() {
             });
 
             res.send(result);
+        });
+
+        // .......................................................Update Order Stripe Session API.................................................................
+
+        app.patch("/orders/:id/stripe", async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { userId, stripeSessionId } = req.body;
+
+                if (!userId || !stripeSessionId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "userId and stripeSessionId are required",
+                    });
+                }
+
+                const result = await ordersCollection.updateOne(
+                    {
+                        _id: new ObjectId(id),
+                        userId: userId,
+                    },
+                    {
+                        $set: {
+                            stripeSessionId: stripeSessionId,
+                            updatedAt: new Date(),
+                        },
+                    }
+                );
+
+                res.send({
+                    success: true,
+                    message: "Stripe session ID saved",
+                    result,
+                });
+            } catch (error) {
+                console.error("Update Stripe session error:", error);
+
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to update order",
+                    error: error.message,
+                });
+            }
+        });
+
+        // .......................................................Payment Complete API.................................................................
+
+        app.patch("/orders/:id/payment", async (req, res) => {
+            try {
+                const { id } = req.params;
+
+                const {
+                    userId,
+                    paymentStatus,
+                    stripePaymentIntentId,
+                } = req.body;
+
+                if (!userId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "userId is required",
+                    });
+                }
+
+                const result = await ordersCollection.updateOne(
+                    {
+                        _id: new ObjectId(id),
+                        userId: userId,
+                    },
+                    {
+                        $set: {
+                            paymentStatus:
+                                paymentStatus || "paid",
+
+                            deliveryStatus: "pending",
+
+                            stripePaymentIntentId:
+                                stripePaymentIntentId || null,
+
+                            paidAt: new Date(),
+
+                            updatedAt: new Date(),
+                        },
+                    }
+                );
+
+                res.send({
+                    success: true,
+                    message: "Payment status updated",
+                    result,
+                });
+            } catch (error) {
+                console.error("Payment update error:", error);
+
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to update payment",
+                    error: error.message,
+                });
+            }
         });
 
         // ..........................................................Delete single book data by Admin api.......................................................................
