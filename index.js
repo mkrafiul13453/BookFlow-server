@@ -257,109 +257,6 @@ async function run() {
             });
         });
 
-        // .......................................................Create Order API.................................................................
-
-        app.post("/orders", async (req, res) => {
-            try {
-                const { userId, user } = req.body;
-
-                if (!userId) {
-                    return res.status(400).send({
-                        success: false,
-                        message: "userId is required",
-                    });
-                }
-
-                // Get user's current cart directly from MongoDB
-                const cartItems = await cartsCollection
-                    .find({ userId: userId })
-                    .toArray();
-
-                if (cartItems.length === 0) {
-                    return res.status(400).send({
-                        success: false,
-                        message: "Cart is empty",
-                    });
-                }
-
-                // Prepare ordered products
-                const products = cartItems.map((item) => {
-                    const price = Number(item.price);
-                    const quantity = Number(item.quantity);
-
-                    return {
-                        productId: item.bookId,
-                        title: item.title,
-                        author: item.author,
-                        image: item.image,
-                        category: item.category,
-
-                        price: price,
-                        quantity: quantity,
-
-                        itemTotal: Number(
-                            (price * quantity).toFixed(2)
-                        ),
-                    };
-                });
-
-                // Calculate total price from database cart
-                const totalPrice = products.reduce(
-                    (total, item) => total + item.itemTotal,
-                    0
-                );
-
-                const order = {
-                    userId: userId,
-
-                    user: {
-                        name: user?.name || "",
-                        email: user?.email || "",
-                        image: user?.image || "",
-                    },
-
-                    products: products,
-
-                    totalPrice: Number(totalPrice.toFixed(2)),
-
-                    currency: "usd",
-
-                    paymentStatus: "pending",
-
-                    deliveryStatus: "pending",
-
-                    stripeSessionId: null,
-
-                    stripePaymentIntentId: null,
-
-                    createdAt: new Date(),
-
-                    updatedAt: new Date(),
-                };
-
-                const result = await ordersCollection.insertOne(order);
-
-                res.send({
-                    success: true,
-                    message: "Order created successfully",
-
-                    orderId: result.insertedId.toString(),
-
-                    order: {
-                        ...order,
-                        _id: result.insertedId,
-                    },
-                });
-            } catch (error) {
-                console.error("Create order error:", error);
-
-                res.status(500).send({
-                    success: false,
-                    message: "Failed to create order",
-                    error: error.message,
-                });
-            }
-        });
 
 
         // ..........................................................Get all user data api.......................................................................
@@ -377,6 +274,148 @@ async function run() {
             });
 
             res.send(result);
+        });
+
+
+        // .......................................................Create Order API.................................................................
+
+        app.post("/orders", async (req, res) => {
+            try {
+                const { userId, user } = req.body;
+
+                if (!userId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "userId is required",
+                    });
+                }
+
+                // Get user's current cart
+                const cartItems = await cartsCollection
+                    .find({ userId: userId })
+                    .toArray();
+
+                if (cartItems.length === 0) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Cart is empty",
+                    });
+                }
+
+                // Prepare ordered products
+                const products = [];
+
+                for (const item of cartItems) {
+                    const price = Number(item.price);
+                    const quantity = Number(item.quantity);
+
+                    // Find the original book
+                    const book = await booksCollection.findOne({
+                        _id: new ObjectId(item.bookId),
+                    });
+
+                    if (!book) {
+                        return res.status(404).send({
+                            success: false,
+                            message: `Book not found: ${item.title}`,
+                        });
+                    }
+
+                    // Get librarian who added this book
+                    const librarianId = book.userId;
+
+                    products.push({
+                        productId: item.bookId,
+
+                        title: item.title,
+                        author: item.author,
+                        image: item.image,
+                        category: item.category,
+
+                        price: price,
+                        quantity: quantity,
+
+                        itemTotal: Number(
+                            (price * quantity).toFixed(2)
+                        ),
+
+                        // NEW
+                        librarianId: librarianId,
+
+                        // NEW
+                        deliveryStatus: "pending",
+                    });
+                }
+
+                // Calculate total price
+                const totalPrice = products.reduce(
+                    (total, item) => total + item.itemTotal,
+                    0
+                );
+
+                // Create order
+                const order = {
+                    userId: userId,
+
+                    user: {
+                        name: user?.name || "",
+                        email: user?.email || "",
+                        image: user?.image || "",
+                    },
+
+                    products: products,
+
+                    totalPrice: Number(
+                        totalPrice.toFixed(2)
+                    ),
+
+                    currency: "usd",
+
+                    paymentStatus: "pending",
+
+                    // Overall delivery status
+                    deliveryStatus: "pending",
+
+                    stripeSessionId: null,
+
+                    stripePaymentIntentId: null,
+
+                    createdAt: new Date(),
+
+                    updatedAt: new Date(),
+                };
+
+                const result =
+                    await ordersCollection.insertOne(order);
+
+                res.send({
+                    success: true,
+
+                    message: "Order created successfully",
+
+                    orderId:
+                        result.insertedId.toString(),
+
+                    order: {
+                        ...order,
+                        _id: result.insertedId,
+                    },
+                });
+
+            } catch (error) {
+                console.error(
+                    "Create order error:",
+                    error
+                );
+
+                res.status(500).send({
+                    success: false,
+
+                    message: "Failed to create order",
+
+                    error: error.message,
+                });
+            }
         });
 
         // .......................................................Update Order Stripe Session API.................................................................
@@ -423,7 +462,6 @@ async function run() {
         });
 
         // .......................................................Payment Complete API.................................................................
-
         app.patch("/orders/:id/payment", async (req, res) => {
             try {
                 const { id } = req.params;
@@ -478,6 +516,365 @@ async function run() {
                 });
             }
         });
+
+
+        // ..........................................................Get all orders API........................................................................
+        app.get("/orders", async (req, res) => {
+            const result = await ordersCollection.find().toArray();
+            res.send(result)
+        })
+
+        // Get librarian's delivery orders
+        app.get("/librarian/orders", async (req, res) => {
+            try {
+                const { userId } = req.query;
+
+                if (!userId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "userId is required",
+                    });
+                }
+
+                // ==========================================
+                // GET BOOKS OF THIS LIBRARIAN
+                // ==========================================
+
+                const librarianBooks =
+                    await booksCollection
+                        .find({ userId })
+                        .project({ _id: 1 })
+                        .toArray();
+
+                const librarianBookIds =
+                    librarianBooks.map((book) =>
+                        book._id.toString()
+                    );
+
+                if (librarianBookIds.length === 0) {
+                    return res.send([]);
+                }
+
+                // ==========================================
+                // GET ORDERS
+                // ==========================================
+
+                const orders =
+                    await ordersCollection
+                        .find({
+                            paymentStatus: "paid",
+                            "products": {
+                                $elemMatch: {
+                                    productId: {
+                                        $in: librarianBookIds,
+                                    },
+                                    deliveryStatus: "pending",
+                                },
+                            },
+                        })
+                        .toArray();
+
+                // ==========================================
+                // FILTER ONLY THIS LIBRARIAN'S PENDING BOOKS
+                // ==========================================
+
+                const result = orders
+                    .map((order) => {
+
+                        const matchingProducts =
+                            order.products.filter(
+                                (product) =>
+                                    librarianBookIds.includes(
+                                        product.productId.toString()
+                                    ) &&
+                                    product.deliveryStatus === "pending"
+                            );
+
+                        // No pending books belonging to this librarian
+                        if (
+                            matchingProducts.length === 0
+                        ) {
+                            return null;
+                        }
+
+                        // Calculate this librarian's pending total
+                        const librarianTotal =
+                            matchingProducts.reduce(
+                                (total, product) =>
+                                    total +
+                                    Number(
+                                        product.itemTotal || 0
+                                    ),
+                                0
+                            );
+
+                        return {
+                            _id: order._id,
+
+                            user: order.user,
+
+                            products:
+                                matchingProducts,
+
+                            totalPrice:
+                                Number(
+                                    librarianTotal.toFixed(2)
+                                ),
+
+                            currency:
+                                order.currency,
+
+                            paymentStatus:
+                                order.paymentStatus,
+
+                            deliveryStatus:
+                                order.deliveryStatus,
+
+                            createdAt:
+                                order.createdAt,
+
+                            updatedAt:
+                                order.updatedAt,
+                        };
+                    })
+                    .filter(Boolean);
+
+                res.send(result);
+
+            } catch (error) {
+                console.error(
+                    "Librarian orders error:",
+                    error
+                );
+
+                res.status(500).send({
+                    success: false,
+
+                    message:
+                        "Failed to get librarian orders",
+                });
+            }
+        });
+
+
+        // Confirm delivery librarian api
+        app.patch("/librarian/orders/:orderId/delivery",
+            async (req, res) => {
+                try {
+                    const { orderId } = req.params;
+
+                    const {
+                        productIds,
+                        userId,
+                    } = req.body;
+
+                    // ==========================================
+                    // VALIDATION
+                    // ==========================================
+
+                    if (!userId) {
+                        return res.status(400).send({
+                            success: false,
+                            message:
+                                "userId is required",
+                        });
+                    }
+
+                    if (
+                        !productIds ||
+                        productIds.length === 0
+                    ) {
+                        return res.status(400).send({
+                            success: false,
+                            message:
+                                "productIds are required",
+                        });
+                    }
+
+                    // ==========================================
+                    // GET LIBRARIAN'S BOOKS
+                    // ==========================================
+
+                    const librarianBooks =
+                        await booksCollection
+                            .find({ userId })
+                            .project({ _id: 1 })
+                            .toArray();
+
+                    const librarianBookIds =
+                        librarianBooks.map((book) =>
+                            book._id.toString()
+                        );
+
+                    // ==========================================
+                    // ONLY ALLOW THIS LIBRARIAN'S BOOKS
+                    // ==========================================
+
+                    const validProductIds =
+                        productIds.filter((productId) =>
+                            librarianBookIds.includes(
+                                productId.toString()
+                            )
+                        );
+
+                    if (
+                        validProductIds.length === 0
+                    ) {
+                        return res.status(403).send({
+                            success: false,
+                            message:
+                                "You are not allowed to update these products.",
+                        });
+                    }
+
+                    // ==========================================
+                    // UPDATE ONLY PENDING PRODUCTS
+                    // pending → approved
+                    // ==========================================
+
+                    await ordersCollection.updateOne(
+                        {
+                            _id: new ObjectId(orderId),
+
+                            // Make sure order has these products
+                            "products.productId": {
+                                $in: validProductIds,
+                            },
+                        },
+
+                        {
+                            $set: {
+                                "products.$[product].deliveryStatus":
+                                    "approved",
+
+                                updatedAt:
+                                    new Date(),
+                            },
+                        },
+
+                        {
+                            arrayFilters: [
+                                {
+                                    "product.productId": {
+                                        $in: validProductIds,
+                                    },
+
+                                    "product.deliveryStatus":
+                                        "pending",
+                                },
+                            ],
+                        }
+                    );
+
+                    // ==========================================
+                    // GET UPDATED ORDER
+                    // ==========================================
+
+                    const updatedOrder =
+                        await ordersCollection.findOne({
+                            _id: new ObjectId(orderId),
+                        });
+
+                    if (!updatedOrder) {
+                        return res.status(404).send({
+                            success: false,
+                            message:
+                                "Order not found",
+                        });
+                    }
+
+                    // ==========================================
+                    // CHECK ALL PRODUCTS
+                    // ==========================================
+
+                    const allProductsApproved =
+                        updatedOrder.products.every(
+                            (product) =>
+                                product.deliveryStatus ===
+                                "approved"
+                        );
+
+                    // ==========================================
+                    // UPDATE OVERALL ORDER STATUS
+                    // ==========================================
+
+                    if (allProductsApproved) {
+                        await ordersCollection.updateOne(
+                            {
+                                _id:
+                                    new ObjectId(orderId),
+                            },
+
+                            {
+                                $set: {
+                                    deliveryStatus:
+                                        "delivered",
+
+                                    updatedAt:
+                                        new Date(),
+
+                                    deliveredAt:
+                                        new Date(),
+                                },
+                            }
+                        );
+                    } else {
+                        // At least one product is still pending
+                        await ordersCollection.updateOne(
+                            {
+                                _id:
+                                    new ObjectId(orderId),
+                            },
+
+                            {
+                                $set: {
+                                    deliveryStatus:
+                                        "pending",
+
+                                    updatedAt:
+                                        new Date(),
+                                },
+                            }
+                        );
+                    }
+
+                    // ==========================================
+                    // FINAL RESPONSE
+                    // ==========================================
+
+                    res.send({
+                        success: true,
+
+                        message:
+                            allProductsApproved
+                                ? "All products delivered. Order completed."
+                                : "Delivery approved successfully.",
+
+                        deliveryStatus:
+                            allProductsApproved
+                                ? "delivered"
+                                : "pending",
+                    });
+
+                } catch (error) {
+                    console.error(
+                        "Delivery update error:",
+                        error
+                    );
+
+                    res.status(500).send({
+                        success: false,
+
+                        message:
+                            "Failed to confirm delivery",
+
+                        error: error.message,
+                    });
+                }
+            }
+        );
+
+
 
         // ..........................................................Delete single book data by Admin api.......................................................................
         app.delete("/books/:id", async (req, res) => {
