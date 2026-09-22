@@ -520,9 +520,16 @@ async function run() {
 
         // ..........................................................Get all orders API........................................................................
         app.get("/orders", async (req, res) => {
-            const result = await ordersCollection.find().toArray();
-            res.send(result)
-        })
+            const { userId } = req.query;
+
+            const query = userId ? { userId } : {};
+
+            const result = await ordersCollection
+                .find(query)
+                .toArray();
+
+            res.send(result);
+        });
 
         // Get librarian's delivery orders
         app.get("/librarian/orders", async (req, res) => {
