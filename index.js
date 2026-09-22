@@ -25,6 +25,8 @@ async function run() {
         const usersCollection = db.collection("user");
         const cartsCollection = db.collection("carts");
         const ordersCollection = db.collection("orders");
+        const reviewsCollection = db.collection("reviews");
+
 
 
 // ..........................................................Add book by librarian api.......................................................................
@@ -893,6 +895,169 @@ async function run() {
 
             res.send(result);
         });
+
+
+        // ==========================================
+        // Get reviews for a specific book
+        // ==========================================
+        app.get("/reviews", async (req, res) => {
+            try {
+                const { bookId } = req.query;
+
+                if (!bookId) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Book ID is required",
+                    });
+                }
+
+                const reviews = await reviewsCollection
+                    .find({ bookId })
+                    .sort({ createdAt: -1 })
+                    .toArray();
+
+                res.send({
+                    success: true,
+                    reviews,
+                });
+
+            } catch (error) {
+                console.error("Get reviews error:", error);
+
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to get reviews",
+                });
+            }
+        });
+
+
+        // ==========================================
+        // Add a review
+        // ==========================================
+        app.post("/reviews", async (req, res) => {
+            try {
+                const {
+                    bookId,
+                    userId,
+                    userName,
+                    userImage,
+                    review,
+                } = req.body;
+
+                if (!bookId || !userId || !review?.trim()) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Required information is missing",
+                    });
+                }
+
+                const newReview = {
+                    bookId,
+                    userId,
+                    userName,
+                    userImage: userImage || "",
+                    review: review.trim(),
+                    createdAt: new Date(),
+                };
+
+                const result = await reviewsCollection.insertOne(
+                    newReview
+                );
+
+                res.status(201).send({
+                    success: true,
+                    message: "Review added successfully",
+
+                    review: {
+                        _id: result.insertedId,
+                        ...newReview,
+                    },
+                });
+
+            } catch (error) {
+                console.error("Add review error:", error);
+
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to add review",
+                });
+            }
+        });
+
+
+
+        // ==========================================
+        // Get all reviews written by a specific user
+        // ==========================================
+        app.get("/reviews/user/:userId", async (req, res) => {
+            try {
+                const { userId } = req.params;
+
+                const reviews = await reviewsCollection
+                    .aggregate([
+                        {
+                            $match: { userId },
+                        },
+                        {
+                            $addFields: {
+                                bookObjectId: {
+                                    $convert: {
+                                        input: "$bookId",
+                                        to: "objectId",
+                                        onError: null,
+                                        onNull: null,
+                                    },
+                                },
+                            },
+                        },
+                        {
+                            $lookup: {
+                                from: "books",
+                                localField: "bookObjectId",
+                                foreignField: "_id",
+                                as: "book",
+                            },
+                        },
+                        {
+                            $unwind: {
+                                path: "$book",
+                                preserveNullAndEmptyArrays: true,
+                            },
+                        },
+                        {
+                            $project: {
+                                bookId: 1,
+                                userId: 1,
+                                userName: 1,
+                                userImage: 1,
+                                review: 1,
+                                createdAt: 1,
+
+                                // আপনার বইয়ের field নাম অনুযায়ী এটি ঠিক করুন
+                                bookName: "$book.title",
+                                bookImage: "$book.image",
+                            },
+                        },
+                        {
+                            $sort: { createdAt: -1 },
+                        },
+                    ])
+                    .toArray();
+
+                res.send({
+                    success: true,
+                    reviews,
+                });
+            } catch (error) {
+                console.error("Get user reviews error:", error);
+
+                res.status(500).send({
+                    success: false,
+                    message: "Failed to get user reviews",
+                });
+            }
+        });;
 
 
 
