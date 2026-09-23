@@ -932,9 +932,8 @@ async function run() {
         });
 
 
-        // ==========================================
-        // Add a review
-        // ==========================================
+        // ==========================================Add a review==========================================
+        // 
         app.post("/reviews", async (req, res) => {
             try {
                 const {
@@ -987,9 +986,9 @@ async function run() {
 
 
 
-        // ==========================================
-        // Get all reviews written by a specific user
-        // ==========================================
+        
+        // ==========================================Get all reviews written by a specific user ==========================================
+
         app.get("/reviews/user/:userId", async (req, res) => {
             try {
                 const { userId } = req.params;
